@@ -1,0 +1,62 @@
+{
+  "Field Corn (Zea mays)": {
+    "fc": 30.0, "pwp": 12.0, "stress_buffer": 15.0, "root_mm": 600, "dose_mm": 25,
+    "kc": [0.30, 0.75, 1.20, 1.20, 0.90, 0.60],
+    "paper_trigger": 17.0, "paper_validated": true
+  },
+  "Soybeans": {
+    "fc": 28.0, "pwp": 11.0, "stress_buffer": 14.0, "root_mm": 550, "dose_mm": 25,
+    "kc": [0.40, 0.70, 1.15, 1.15, 0.75, 0.50],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Wheat": {
+    "fc": 32.0, "pwp": 10.0, "stress_buffer": 13.0, "root_mm": 900, "dose_mm": 25,
+    "kc": [0.30, 0.70, 1.15, 1.10, 0.60, 0.25],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Potatoes": {
+    "fc": 28.0, "pwp": 12.0, "stress_buffer": 16.0, "root_mm": 400, "dose_mm": 25,
+    "kc": [0.50, 0.80, 1.15, 1.15, 0.85, 0.75],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Tomatoes": {
+    "fc": 30.0, "pwp": 13.0, "stress_buffer": 17.0, "root_mm": 500, "dose_mm": 25,
+    "kc": [0.60, 0.80, 1.15, 1.20, 1.00, 0.80],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Rice": {
+    "fc": 35.0, "pwp": 18.0, "stress_buffer": 22.0, "root_mm": 500, "dose_mm": 30,
+    "kc": [1.05, 1.10, 1.20, 1.20, 1.05, 0.95],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Sugarcane": {
+    "fc": 32.0, "pwp": 13.0, "stress_buffer": 17.0, "root_mm": 1200, "dose_mm": 30,
+    "kc": [0.55, 0.75, 1.00, 1.25, 1.25, 0.70],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Cassava": {
+    "fc": 28.0, "pwp": 10.0, "stress_buffer": 14.0, "root_mm": 800, "dose_mm": 25,
+    "kc": [0.30, 0.60, 0.80, 0.90, 1.00, 0.80],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Yams": {
+    "fc": 28.0, "pwp": 11.0, "stress_buffer": 14.0, "root_mm": 600, "dose_mm": 25,
+    "kc": [0.50, 0.80, 1.05, 1.05, 0.90, 0.70],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Sorghum": {
+    "fc": 27.0, "pwp": 10.0, "stress_buffer": 13.0, "root_mm": 1000, "dose_mm": 25,
+    "kc": [0.35, 0.65, 1.00, 1.10, 0.90, 0.55],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Sugar Beets": {
+    "fc": 30.0, "pwp": 11.0, "stress_buffer": 15.0, "root_mm": 700, "dose_mm": 25,
+    "kc": [0.35, 0.75, 1.20, 1.20, 0.90, 0.70],
+    "paper_trigger": null, "paper_validated": false
+  },
+  "Barley": {
+    "fc": 30.0, "pwp": 10.0, "stress_buffer": 13.0, "root_mm": 800, "dose_mm": 25,
+    "kc": [0.30, 0.60, 1.15, 1.15, 0.55, 0.25],
+    "paper_trigger": null, "paper_validated": false
+  }
+}
