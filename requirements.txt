@@ -2,5 +2,7 @@ streamlit>=1.40.0
 pandas
 numpy
 requests
+plotly>=5.18.0
 folium
 streamlit-folium
+streamlit-plotly-events

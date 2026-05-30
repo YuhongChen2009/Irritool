@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+    #globe { width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="globe"></div>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script>
+    const gd = document.getElementById('globe');
+    let clickAttached   = false;
+    let dragOccurred    = false;
+    let startX = 0, startY = 0;
+    const DRAG_THRESHOLD = 8;
+
+    // Persistent state: survives Plotly.react calls
+    let savedScale    = null;   // user zoom level
+    let savedRotation = null;   // current globe orientation
+    let pendingRot    = null;   // set on click → applied on next render
+
+    // Guard: suppress DOM-click fallback when plotly_click already fired
+    let plotlyClickFired = false;
+
+    document.addEventListener('mousedown', (e) => {
+      dragOccurred = false;
+      startX = e.clientX; startY = e.clientY;
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (Math.abs(e.clientX - startX) > DRAG_THRESHOLD ||
+          Math.abs(e.clientY - startY) > DRAG_THRESHOLD)
+        dragOccurred = true;
+    });
+
+    function send(type, payload) {
+      window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, payload), '*');
+    }
+
+    function saveGeoState() {
+      const geo = gd._fullLayout && gd._fullLayout.geo;
+      if (!geo || !geo.projection) return;
+      if (geo.projection.scale    !== undefined) savedScale    = geo.projection.scale;
+      if (geo.projection.rotation !== undefined) savedRotation = Object.assign({}, geo.projection.rotation);
+    }
+
+    function onPick(lat, lon) {
+      // Set pending rotation so next Plotly.react centers the globe on this point.
+      pendingRot = { lon, lat, roll: 0 };
+      // Also apply immediately for instant visual feedback before Python rerun.
+      Plotly.relayout(gd, {
+        'geo.projection.rotation.lon': lon,
+        'geo.projection.rotation.lat': lat,
+      });
+      send('streamlit:setComponentValue', { value: { lat, lon, ts: Date.now() }, dataType: 'json' });
+    }
+
+    // ── Fallback: DOM click handles gaps between grid markers when zoomed in ──
+    // Plotly/D3 does not stop native click propagation, so this fires for any
+    // click on the chart that plotly_click didn't handle.
+    gd.addEventListener('click', (e) => {
+      if (dragOccurred || plotlyClickFired) return;
+      const geo = gd._fullLayout && gd._fullLayout.geo;
+      if (!geo || !geo._projection) return;
+      const svgEl = gd.querySelector('.main-svg');
+      if (!svgEl) return;
+      try {
+        const pt    = svgEl.createSVGPoint();
+        pt.x = e.clientX; pt.y = e.clientY;
+        const svgPt = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+        const ll    = geo._projection.invert([svgPt.x, svgPt.y]);
+        if (!ll || isNaN(ll[0]) || isNaN(ll[1])) return;  // outside globe disc
+        onPick(ll[1], ll[0]);
+      } catch (_) {}
+    });
+
+    window.addEventListener('message', function (event) {
+      if (!event.data || event.data.type !== 'streamlit:render') return;
+
+      const args = event.data.args || event.data;
+      const fig  = args.figure;
+      const h    = args.height || 700;
+      if (!fig) return;
+
+      // Save current geo state before overwriting.
+      saveGeoState();
+
+      // Inject saved state into figure layout so Plotly.react never resets
+      // the scale or rotation (uirevision alone is not reliable for geo).
+      if (!fig.layout.geo) fig.layout.geo = {};
+      if (!fig.layout.geo.projection) fig.layout.geo.projection = {};
+      if (savedScale !== null)
+        fig.layout.geo.projection.scale = savedScale;
+      const rot = pendingRot || savedRotation;
+      if (rot) {
+        fig.layout.geo.projection.rotation = Object.assign({}, rot);
+        pendingRot = null;
+      }
+
+      gd.style.height = h + 'px';
+
+      Plotly.react(gd, fig.data, fig.layout, {
+        doubleClick:    false,
+        scrollZoom:     true,
+        displayModeBar: false,
+        responsive:     true,
+      }).then(() => {
+        if (!clickAttached) {
+          gd.on('plotly_click', (data) => {
+            if (dragOccurred) return;
+            if (!data || !data.points || !data.points.length) return;
+            const pt = data.points[0];
+            if (pt.lat == null || pt.lon == null) return;
+            // Suppress the DOM-click fallback that fires right after this.
+            plotlyClickFired = true;
+            setTimeout(() => { plotlyClickFired = false; }, 150);
+            onPick(pt.lat, pt.lon);
+          });
+          clickAttached = true;
+        }
+      }).catch((err) => console.error('[globe] Plotly error:', err));
+
+      send('streamlit:setFrameHeight', { height: h });
+    });
+
+    send('streamlit:componentReady', { apiVersion: 1 });
+  </script>
+</body>
+</html>
