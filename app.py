@@ -65,9 +65,9 @@ def _render_steps(current, max_reached):
                 unsafe_allow_html=True,
             )
 
-
 _render_steps(page, max_reached)
 st.divider()
+
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
