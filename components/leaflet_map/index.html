@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { overflow: hidden; }
+    #map { width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let map = null, marker = null, tileLayer = null, currentTileUrl = null;
+
+    const MARKER_OPTS = {
+      radius: 8, color: 'white', weight: 2,
+      fillColor: '#e84040', fillOpacity: 1.0,
+    };
+
+    function send(type, payload) {
+      window.parent.postMessage(
+        Object.assign({ isStreamlitMessage: true, type }, payload), '*'
+      );
+    }
+
+    function normalizeLon(lon) {
+      return ((lon + 180) % 360 + 360) % 360 - 180;
+    }
+
+    function setTileUrl(url) {
+      if (tileLayer) map.removeLayer(tileLayer);
+      tileLayer = L.tileLayer(url, { noWrap: false }).addTo(map);
+      currentTileUrl = url;
+    }
+
+    function syncMarker(hasMarker, lat, lon) {
+      if (hasMarker) {
+        if (!marker) {
+          marker = L.circleMarker([lat, lon], MARKER_OPTS).addTo(map);
+        } else {
+          marker.setLatLng([lat, lon]);
+        }
+      } else {
+        if (marker) {
+          map.removeLayer(marker);
+          marker = null;
+        }
+      }
+    }
+
+    function initMap(lat, lon, height, tileUrl, initZoom) {
+      document.getElementById('map').style.height = height + 'px';
+
+      map = L.map('map', {
+        center: [lat, lon],
+        zoom: initZoom,
+        minZoom: initZoom,
+        doubleClickZoom: false,
+        maxBounds: [[-90, -180], [90, 180]],
+        maxBoundsViscosity: 1.0,
+        attributionControl: false,
+      });
+
+      setTileUrl(tileUrl);
+
+      // No marker created here — syncMarker handles that based on has_marker
+      map.on('click', function(e) {
+        const clickLat = Math.round(e.latlng.lat * 10000) / 10000;
+        const clickLon = Math.round(normalizeLon(e.latlng.lng) * 10000) / 10000;
+        if (!marker) {
+          marker = L.circleMarker([clickLat, clickLon], MARKER_OPTS).addTo(map);
+        } else {
+          marker.setLatLng([clickLat, clickLon]);
+        }
+        send('streamlit:setComponentValue', {
+          value: { lat: clickLat, lon: clickLon, ts: Date.now() },
+          dataType: 'json',
+        });
+      });
+    }
+
+    window.addEventListener('message', function(event) {
+      if (!event.data || event.data.type !== 'streamlit:render') return;
+
+      const args      = event.data.args || event.data;
+      const lat       = typeof args.lat       === 'number'  ? args.lat       : 0;
+      const lon       = typeof args.lon       === 'number'  ? args.lon       : 0;
+      const height    = typeof args.height    === 'number'  ? args.height    : 650;
+      const initZoom  = typeof args.init_zoom === 'number'  ? args.init_zoom : 2;
+      const hasMarker = args.has_marker === true;
+      const tileUrl   = typeof args.tile_url  === 'string'  ? args.tile_url
+                      : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+      document.getElementById('map').style.height = height + 'px';
+
+      if (!map) {
+        initMap(lat, lon, height, tileUrl, initZoom);
+        syncMarker(hasMarker, lat, lon);
+      } else {
+        syncMarker(hasMarker, lat, lon);
+        if (tileUrl !== currentTileUrl) setTileUrl(tileUrl);
+        map.invalidateSize();
+      }
+
+      send('streamlit:setFrameHeight', { height });
+    });
+
+    send('streamlit:componentReady', { apiVersion: 1 });
+  </script>
+</body>
+</html>

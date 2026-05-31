@@ -1,5 +1,7 @@
+import base64
 import json
 import math
+import time
 import requests
 from pathlib import Path
 
@@ -62,74 +64,191 @@ def _ra(lat_deg, month_idx):
     )
 
 
-# Maps FAOSTAT item names → internal crop names
+# Maps FAOSTAT item names → internal crop names (covers old and new API name variants)
 _FAOSTAT_TO_CROP = {
-    "Maize (corn)":   "Field Corn (Zea mays)",
-    "Soybeans":       "Soybeans",
-    "Wheat":          "Wheat",
-    "Potatoes":       "Potatoes",
-    "Tomatoes":       "Tomatoes",
-    "Rice":           "Rice",
-    "Sugar cane":     "Sugarcane",
-    "Cassava, fresh": "Cassava",
-    "Yams":           "Yams",
-    "Sorghum":        "Sorghum",
-    "Sugar beet":     "Sugar Beets",
-    "Barley":         "Barley",
+    "Maize (corn)":        "Field Corn (Zea mays)",
+    "Maize":               "Field Corn (Zea mays)",
+    "Corn":                "Field Corn (Zea mays)",
+    "Soybeans":            "Soybeans",
+    "Soya beans":          "Soybeans",
+    "Soybean":             "Soybeans",
+    "Wheat":               "Wheat",
+    "Potatoes":            "Potatoes",
+    "Potato":              "Potatoes",
+    "Tomatoes":            "Tomatoes",
+    "Tomato":              "Tomatoes",
+    "Rice":                "Rice",
+    "Rice, paddy":         "Rice",
+    "Sugar cane":          "Sugarcane",
+    "Sugar Cane":          "Sugarcane",
+    "Sugarcane":           "Sugarcane",
+    "Cassava, fresh":      "Cassava",
+    "Cassava":             "Cassava",
+    "Yams":                "Yams",
+    "Yam":                 "Yams",
+    "Sorghum":             "Sorghum",
+    "Sugar beet":          "Sugar Beets",
+    "Sugar beets":         "Sugar Beets",
+    "Sugar Beet":          "Sugar Beets",
+    "Barley":              "Barley",
 }
 
-# Module-level cache so the country list is only fetched once per process
+# Module-level caches: country list fetched once, crop results cached per country
 _faostat_area_cache: dict[str, str] = {}
+_crop_cache: dict[str, tuple[str, list]] = {}
+_country_name_cache: dict[str, str] = {}   # ISO2 → display name
 
 
 def _reverse_geocode(lat, lon):
     resp = requests.get(
         "https://nominatim.openstreetmap.org/reverse",
-        params={"lat": lat, "lon": lon, "format": "json"},
+        params={"lat": lat, "lon": lon, "format": "json", "zoom": 3, "namedetails": 1},
         headers={"User-Agent": "IrriTool/1.0 (irrigation scheduling app)"},
         timeout=10,
     )
     resp.raise_for_status()
-    addr = resp.json()["address"]
-    return addr["country_code"].upper(), addr.get("country", "")
+    data = resp.json()
+    if "address" not in data:
+        raise ValueError(f"No land address for ({lat}, {lon}) — ocean or unmapped area")
+    addr = data["address"]
+    iso2 = addr["country_code"].upper()
+    nd = data.get("namedetails", {})
+    local_name = nd.get("name") or addr.get("country", "")
+    english_name = nd.get("name:en", "")
+    return iso2, local_name, english_name
+
+
+def _format_country(local, english):
+    if english and english.lower() != local.lower():
+        return f"{local} ({english})"
+    return local or english
+
+
+def fetch_country_name(lat, lon):
+    """Returns the country name, or 'Water' for ocean/unmapped areas, or None on error."""
+    try:
+        iso2, local_name, english_name = _reverse_geocode(lat, lon)
+        name = _format_country(local_name, english_name)
+        _country_name_cache[iso2] = name
+        return name
+    except ValueError:
+        return "Water"
+    except Exception:
+        return None
+
+
+_faostat_token: str = ""
+_faostat_token_expiry: float = 0.0
+
+
+def _jwt_expiry(token: str) -> float:
+    """Decode the exp claim from a JWT without verifying the signature."""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        return float(json.loads(base64.urlsafe_b64decode(payload_b64)).get("exp", 0))
+    except Exception:
+        return 0.0
+
+
+def _faostat_login() -> str:
+    try:
+        import tomllib
+        secrets_path = Path(__file__).parent.parent / ".streamlit" / "secrets.toml"
+        with open(secrets_path, "rb") as f:
+            s = tomllib.load(f)
+        username = s.get("FAOSTAT_USERNAME", "")
+        password = s.get("FAOSTAT_PASSWORD", "")
+        if not username or not password:
+            return ""
+        resp = requests.post(
+            "https://faostatservices.fao.org/api/v1/auth/login",
+            data={"username": username, "password": password},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        token = (data.get("AuthenticationResult") or {}).get("AccessToken") \
+             or data.get("access_token") or data.get("AccessToken") or data.get("token", "")
+        return token
+    except Exception as e:
+        print(f"[FAOSTAT] login failed: {e}")
+        return ""
+
+
+def _faostat_headers() -> dict:
+    global _faostat_token, _faostat_token_expiry
+    # Refresh if missing or expiring within 60 seconds
+    if not _faostat_token or time.time() > _faostat_token_expiry - 60:
+        _faostat_token = _faostat_login()
+        _faostat_token_expiry = _jwt_expiry(_faostat_token) if _faostat_token else 0.0
+    if _faostat_token:
+        return {"Authorization": f"Bearer {_faostat_token}"}
+    return {}
 
 
 def _iso2_to_faostat(iso2):  # iso2 is the first element returned by _reverse_geocode
     if not _faostat_area_cache:
         resp = requests.get(
-            "https://fenixservices.fao.org/faostat/api/v1/en/definitions/domain/QCL/area",
+            "https://faostatservices.fao.org/api/v1/en/definitions/domain/QCL/area",
             params={"output_type": "objects"},
+            headers=_faostat_headers(),
             timeout=15,
         )
         resp.raise_for_status()
         for item in resp.json().get("data", []):
-            code = item.get("ISO2_Code", "").upper()
+            code = item.get("ISO2 Code", "").upper()
             if code:
-                _faostat_area_cache[code] = item["Code"]
+                _faostat_area_cache[code] = item["Country Code"]
     return _faostat_area_cache.get(iso2)
 
 
 def fetch_top_crops(lat, lon):
-    """Returns (country_name, crops) where crops is up to 5 items ranked by
-    FAOSTAT production volume. Falls back to regional defaults on any error."""
+    """Returns (country_name, crops, data_year) ranked by FAOSTAT production volume.
+    data_year is None when falling back to regional defaults."""
     try:
-        iso2, country_name = _reverse_geocode(lat, lon)
+        iso2, local_name, english_name = _reverse_geocode(lat, lon)
+        country_name = _format_country(local_name, english_name)
+        _country_name_cache[iso2] = country_name
+        if iso2 in _crop_cache:
+            return _crop_cache[iso2]
+
         fao_code = _iso2_to_faostat(iso2)
         if not fao_code:
             raise ValueError(f"No FAOSTAT code for {iso2}")
 
-        resp = requests.get(
-            "https://fenixservices.fao.org/faostat/api/v1/en/data/QCL",
-            params={"area": fao_code, "element": "5510", "year": "2022", "format": "json"},
-            timeout=15,
-        )
-        resp.raise_for_status()
+        rows = []
+        data_year = None
+        for year in (2025, 2024, 2023, 2022):
+            try:
+                resp = requests.get(
+                    "https://faostatservices.fao.org/api/v1/en/data/QCL",
+                    params={"area": fao_code, "element": "2510", "item": "QC>", "year": str(year), "output_type": "objects"},
+                    headers=_faostat_headers(),
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                body = resp.json()
+                rows = body.get("data", [])
+                if rows:
+                    data_year = year
+                    break
+            except Exception:
+                continue
 
-        rows = sorted(
-            resp.json().get("data", []),
-            key=lambda x: float(x.get("Value") or 0),
-            reverse=True,
-        )
+        _AGG_SUFFIXES = (" primary", " total", "n.e.c.", ", total", ", primary")
+
+        def _is_aggregate(name: str) -> bool:
+            n = name.lower()
+            return any(n.endswith(s) for s in _AGG_SUFFIXES)
+
+        rows = [r for r in rows if not _is_aggregate(r.get("Item", ""))]
+        rows = sorted(rows, key=lambda x: float(x.get("Value") or 0), reverse=True)
+
+        print(f"\n[FAOSTAT] {iso2} ({country_name}) — year={data_year}, {len(rows)} rows (after aggregate filter)")
+        for r in rows[:20]:
+            print(f"  {r.get('Value'):>12}  {r.get('Item')}")
 
         crops = []
         for row in rows:
@@ -146,11 +265,12 @@ def fetch_top_crops(lat, lon):
             if c not in crops:
                 crops.append(c)
 
-        return country_name, crops
+        _crop_cache[iso2] = (country_name, crops, data_year)
+        return _crop_cache[iso2]
 
     except Exception:
         region = determine_region(lat, lon)
-        return region, REGIONAL_CROP_DATABASE[region]
+        return region, REGIONAL_CROP_DATABASE[region], None
 
 
 def fetch_climate(lat, lon):
