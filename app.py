@@ -30,7 +30,10 @@ for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
-_lat, _lon = st.session_state["map_center"]
+_lat_raw = st.session_state.get("coord_lat")
+_lon_raw = st.session_state.get("coord_lon")
+_lat = _lat_raw if _lat_raw is not None else DEFAULT_LAT
+_lon = _lon_raw if _lon_raw is not None else DEFAULT_LON
 active_region = determine_region(_lat, _lon)
 suggested_crops = REGIONAL_CROP_DATABASE[active_region]
 
@@ -57,6 +60,8 @@ def _render_steps(current, max_reached):
             )
         elif i <= max_reached:
             if col.button(label, key=f"tab_{i}", use_container_width=True):
+                st.session_state["_coord_lat_saved"] = st.session_state.get("coord_lat")
+                st.session_state["_coord_lon_saved"] = st.session_state.get("coord_lon")
                 st.session_state["page"] = i
                 st.rerun()
         else:
