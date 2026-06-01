@@ -64,6 +64,21 @@ def _ra(lat_deg, month_idx):
     )
 
 
+CROP_SCIENTIFIC = {
+    "Field Corn (Zea mays)": "Field Corn (Zea mays)",
+    "Soybeans":              "Soybeans (Glycine max)",
+    "Wheat":                 "Wheat (Triticum aestivum)",
+    "Potatoes":              "Potatoes (Solanum tuberosum)",
+    "Tomatoes":              "Tomatoes (Solanum lycopersicum)",
+    "Rice":                  "Rice (Oryza sativa)",
+    "Sugarcane":             "Sugarcane (Saccharum officinarum)",
+    "Cassava":               "Cassava (Manihot esculenta)",
+    "Yams":                  "Yams (Dioscorea spp.)",
+    "Sorghum":               "Sorghum (Sorghum bicolor)",
+    "Sugar Beets":           "Sugar Beets (Beta vulgaris)",
+    "Barley":                "Barley (Hordeum vulgare)",
+}
+
 # Maps FAOSTAT item names → internal crop names (covers old and new API name variants)
 _FAOSTAT_TO_CROP = {
     "Maize (corn)":        "Field Corn (Zea mays)",
@@ -275,8 +290,7 @@ def fetch_top_crops(lat, lon):
 
 def fetch_climate(lat, lon):
     """Fetch long-term monthly climate normals from NASA POWER for a coordinate.
-    Returns (precip_mm, et0_mm) as 12-element lists.
-    Falls back to regional hardcoded values if the API is unreachable."""
+    Returns (precip_mm, et0_mm, source) where source is 'NASA POWER' or 'Regional Defaults'."""
     try:
         resp = requests.get(
             "https://power.larc.nasa.gov/api/temporal/climatology/point",
@@ -304,11 +318,11 @@ def fetch_climate(lat, lon):
             et0_daily = 0.0023 * _ra(lat, m) * (tmean + 17.8) * td ** 0.5
             et0_mm.append(round(et0_daily * _DAYS[m], 1))
 
-        return precip_mm, et0_mm
+        return precip_mm, et0_mm, "NASA POWER"
 
     except Exception:
         region = determine_region(lat, lon)
-        return list(REGIONAL_PRECIP[region]), list(REGIONAL_ET0[region])
+        return list(REGIONAL_PRECIP[region]), list(REGIONAL_ET0[region]), "Regional Defaults"
 
 
 def determine_region(lat, lon):

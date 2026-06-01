@@ -27,7 +27,7 @@ def render(active_region, suggested_crops):
     if "has_marker" not in st.session_state:
         st.session_state["has_marker"] = False
     if "map_tile_choice" not in st.session_state:
-        st.session_state["map_tile_choice"] = "Default (local languages)"
+        st.session_state["map_tile_choice"] = st.session_state.get("_map_tile_saved", "Default (local languages)")
 
     coord_lat = st.session_state["coord_lat"]
     coord_lon = st.session_state["coord_lon"]
@@ -101,11 +101,10 @@ def render(active_region, suggested_crops):
             st.info("📍 Click on the map to select a location.")
 
         _choices = list(_TILE_URLS.keys())
-        _selected = st.selectbox("Map labels", _choices,
-                                 index=_choices.index(st.session_state["map_tile_choice"]))
-        st.session_state["map_tile_choice"] = _selected
+        st.selectbox("Map labels", _choices, key="map_tile_choice",
+                     on_change=lambda: st.session_state.update({"_map_tile_saved": st.session_state["map_tile_choice"]}))
         st.divider()
-        if st.button("Next →", type="primary", use_container_width=True):
+        if st.button("Next →", type="primary", width='stretch'):
             if not has_location:
                 st.toast("Please select a location first.", icon="⚠️")
             elif is_water:
