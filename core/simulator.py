@@ -63,10 +63,15 @@ def _compute_phases(p, precip, et0, trigger, season_start):
     return phases
 
 
-def run_calc(crop_name, precip, et0, planting_date):
-    p = CROP_PARAMS.get(crop_name)
-    if p is None:
+def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None):
+    p = dict(CROP_PARAMS.get(crop_name) or {})
+    if not p:
         return None
+
+    if soil_fc is not None:
+        p["fc"] = soil_fc
+    if soil_pwp is not None:
+        p["pwp"] = soil_pwp
 
     season_start = planting_date.month
 
