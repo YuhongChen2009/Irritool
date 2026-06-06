@@ -20,8 +20,7 @@ def render(active_region, suggested_crops):
             st.session_state["faostat_crops"]     = crops
             st.session_state["country_name"]      = country_name
             st.session_state["faostat_data_year"] = data_year
-            saved = st.session_state.get("selected_crop")
-            st.session_state["selected_crop"] = saved if saved in crops else crops[0]
+            st.session_state["selected_crop"]     = crops[0]
     else:
         crops      = st.session_state["faostat_crops"]
         _fao_name  = st.session_state.get("country_name", "")

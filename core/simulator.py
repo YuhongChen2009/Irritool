@@ -68,10 +68,19 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
     if not p:
         return None
 
-    if soil_fc is not None:
-        p["fc"] = soil_fc
-    if soil_pwp is not None:
-        p["pwp"] = soil_pwp
+    if soil_fc is not None or soil_pwp is not None:
+        orig_fc  = p["fc"]
+        orig_pwp = p["pwp"]
+        if soil_fc  is not None: p["fc"]  = soil_fc
+        if soil_pwp is not None: p["pwp"] = soil_pwp
+        # Scale stress_buffer to maintain its proportional position between pwp and fc.
+        # Without this, the original buffer can sit below the new pwp or conflict with
+        # the trigger search range, forcing the optimizer toward more irrigation events.
+        if orig_fc > orig_pwp:
+            ratio = (p["stress_buffer"] - orig_pwp) / (orig_fc - orig_pwp)
+            p["stress_buffer"] = round(
+                max(p["pwp"] + 0.5, min(p["fc"] - 1.0,
+                    p["pwp"] + ratio * (p["fc"] - p["pwp"]))), 1)
 
     season_start = planting_date.month
 
@@ -81,16 +90,19 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
         if sx < best_stress or (sx == best_stress and ev < best_events):
             best_trigger, best_events, best_stress = float(t), ev, sx
 
+    print(f"[Sim] {crop_name} | trigger={best_trigger} events={best_events} stress={best_stress} "
+          f"fc={p['fc']} pwp={p['pwp']} buf={p['stress_buffer']}")
+
     trad_water = TRAD_EVENTS_YR * TRAD_DOSE_MM * L_PER_MM_PER_ACRE
     bf_water   = best_events * p["dose_mm"] * L_PER_MM_PER_ACRE
     saved      = max(0, trad_water - bf_water)
-    reduction  = (1 - best_events / TRAD_EVENTS_YR) * 100
+    reduction  = round(max(0.0, (1 - best_events / TRAD_EVENTS_YR) * 100), 1)
 
     return dict(
         trigger=round(best_trigger, 1),
         bf_events_yr=best_events,
         trad_events_yr=TRAD_EVENTS_YR,
-        reduction_pct=round(reduction, 1),
+        reduction_pct=reduction,
         bf_water_L=int(bf_water),
         trad_water_L=int(trad_water),
         saved_L=int(saved),

@@ -17,15 +17,6 @@ REGIONAL_PRECIP = {
     "Global Baseline":[65,  60,  70,  80,  90,  90,  85,  85,  80,  75,  65,  65],
 }
 
-REGIONAL_ET0 = {
-    "North America":  [22,  28,  48,  78,  115, 140, 150, 135, 105, 68,  38,  22],
-    "South America":  [160, 145, 130, 95,  65,  42,  38,  50,  75,  105, 135, 155],
-    "Europe":         [18,  22,  42,  70,  105, 120, 130, 120, 88,  58,  28,  18],
-    "Africa":         [95,  100, 105, 110, 105, 85,  80,  90,  100, 100, 95,  90],
-    "Asia & Oceania": [55,  62,  85,  110, 140, 150, 148, 138, 115, 90,  65,  52],
-    "Global Baseline":[65,  72,  90,  105, 125, 130, 132, 125, 108, 90,  70,  62],
-}
-
 REGIONAL_CROP_DATABASE = {
     "North America":  ["Field Corn (Zea mays)", "Soybeans", "Wheat", "Potatoes", "Tomatoes"],
     "South America":  ["Sugarcane", "Soybeans", "Field Corn (Zea mays)", "Rice", "Cassava"],
@@ -33,14 +24,6 @@ REGIONAL_CROP_DATABASE = {
     "Europe":         ["Wheat", "Barley", "Potatoes", "Sugar Beets", "Tomatoes"],
     "Africa":         ["Cassava", "Yams", "Field Corn (Zea mays)", "Sorghum", "Rice"],
     "Global Baseline":["Field Corn (Zea mays)", "Rice", "Wheat", "Soybeans", "Potatoes"],
-}
-
-TILE_OPTIONS = {
-    "Voyager":       ("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", "CartoDB", "abcd"),
-    "Light":         ("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",           "CartoDB", "abcd"),
-    "Dark Mode":     ("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",            "CartoDB", "abcd"),
-    "Satellite":     ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", "Esri", ""),
-    "OpenStreetMap": ("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",                       "OSM",     "abc"),
 }
 
 DEFAULT_LAT = 43.5400
@@ -53,7 +36,7 @@ _DOY        = [15, 45, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 
 
 def _ra(lat_deg, month_idx):
-    """Extraterrestrial radiation (MJ/m²/day) via FAO-56 procedure."""
+    """Extraterrestrial radiation (MJ/m²/day) via FAO-56 for any latitude."""
     lat = math.radians(lat_deg)
     dr    = 1 + 0.033 * math.cos(2 * math.pi / 365 * _DOY[month_idx])
     delta = 0.409 * math.sin(2 * math.pi / 365 * _DOY[month_idx] - 1.39)
@@ -62,6 +45,32 @@ def _ra(lat_deg, month_idx):
         ws * math.sin(lat) * math.sin(delta) +
         math.cos(lat) * math.cos(delta) * math.sin(ws)
     )
+
+
+def _ra_et0(lat):
+    """Estimate monthly ET0 (mm) from extraterrestrial radiation and latitude-based
+    temperature normals. Used as a fallback when NASA POWER is unavailable.
+
+    Temperature model (Tmean, Trange) derived from latitude only:
+      - Annual mean ≈ 30 − 0.55·|lat|  (global lapse-rate approximation)
+      - Seasonal amplitude ≈ 0.38·|lat| (larger swings at higher latitudes)
+      - Peaks in July (N hemisphere) / January (S hemisphere)
+      - Daily range ≈ 8 + 0.12·|lat|   (more continental away from tropics)
+    """
+    ann_mean  = max(-10.0, 30.0 - 0.55 * abs(lat))
+    amplitude = abs(lat) * 0.38
+    trange    = 8.0 + abs(lat) * 0.12
+    peak_m    = 6 if lat >= 0 else 0   # July (index 6) for N, January (0) for S
+
+    et0 = []
+    for m in range(12):
+        tmean     = ann_mean + amplitude * math.cos(2 * math.pi * (m - peak_m) / 12)
+        # Rs ≈ 0.5 * Ra: Angström formula at ~50% average sunshine fraction.
+        # Using raw Ra here inflates ET0 by ~2.5× in humid/temperate climates.
+        rs        = 0.5 * _ra(lat, m)
+        et0_daily = max(0.0, 0.0023 * rs * (tmean + 17.8) * trange ** 0.5)
+        et0.append(round(et0_daily * _DAYS[m], 1))
+    return et0
 
 
 CROP_SCIENTIFIC = {
@@ -111,7 +120,6 @@ _FAOSTAT_TO_CROP = {
 # Module-level caches: country list fetched once, crop results cached per country
 _faostat_area_cache: dict[str, str] = {}
 _crop_cache: dict[str, tuple[str, list]] = {}
-_country_name_cache: dict[str, str] = {}   # ISO2 → display name
 
 
 def _reverse_geocode(lat, lon):
@@ -142,10 +150,8 @@ def _format_country(local, english):
 def fetch_country_name(lat, lon):
     """Returns the country name, or 'Water' for ocean/unmapped areas, or None on error."""
     try:
-        iso2, local_name, english_name = _reverse_geocode(lat, lon)
-        name = _format_country(local_name, english_name)
-        _country_name_cache[iso2] = name
-        return name
+        _, local_name, english_name = _reverse_geocode(lat, lon)
+        return _format_country(local_name, english_name)
     except ValueError:
         return "Water"
     except Exception:
@@ -225,7 +231,6 @@ def fetch_top_crops(lat, lon):
     try:
         iso2, local_name, english_name = _reverse_geocode(lat, lon)
         country_name = _format_country(local_name, english_name)
-        _country_name_cache[iso2] = country_name
         if iso2 in _crop_cache:
             return _crop_cache[iso2]
 
@@ -290,12 +295,23 @@ def fetch_top_crops(lat, lon):
 
 def fetch_climate(lat, lon):
     """Fetch long-term monthly climate normals from NASA POWER for a coordinate.
-    Returns (precip_mm, et0_mm, source) where source is 'NASA POWER' or 'Regional Defaults'."""
+    Returns (precip_mm, et0_mm, source).
+
+    Two important unit / data corrections vs naive usage:
+      1. ALLSKY_SFC_SW_DWN is in MJ/m²/day — do NOT multiply by 3.6.
+      2. T2M_MAX/T2M_MIN in the climatology endpoint are all-time monthly extremes,
+         not averages of daily max/min. Using them for td inflates ET0 ~2×.
+         Instead fetch T2M (monthly mean) and estimate diurnal range from latitude.
+    """
+    # Typical daily temperature range estimated from latitude:
+    # lower in humid tropics/coasts, higher in continental mid-latitudes.
+    td_est = max(6.0, 15.0 - 0.1 * abs(lat))
+
     try:
         resp = requests.get(
             "https://power.larc.nasa.gov/api/temporal/climatology/point",
             params={
-                "parameters": "PRECTOTCORR,T2M_MAX,T2M_MIN",
+                "parameters": "PRECTOTCORR,T2M,ALLSKY_SFC_SW_DWN",
                 "community":  "AG",
                 "longitude":  round(lon, 4),
                 "latitude":   round(lat, 4),
@@ -306,23 +322,32 @@ def fetch_climate(lat, lon):
         resp.raise_for_status()
         param = resp.json()["properties"]["parameter"]
 
-        prec_d = [param["PRECTOTCORR"][k] for k in _MONTH_KEYS]
-        tmax   = [param["T2M_MAX"][k]     for k in _MONTH_KEYS]
-        tmin   = [param["T2M_MIN"][k]     for k in _MONTH_KEYS]
+        prec_d = [param["PRECTOTCORR"][k]       for k in _MONTH_KEYS]
+        tmean  = [param["T2M"][k]               for k in _MONTH_KEYS]  # monthly mean °C
+        srad   = [param["ALLSKY_SFC_SW_DWN"][k] for k in _MONTH_KEYS]  # MJ/m²/day
 
         precip_mm = [round(prec_d[m] * _DAYS[m], 1) for m in range(12)]
         et0_mm = []
         for m in range(12):
-            tmean     = (tmax[m] + tmin[m]) / 2
-            td        = max(0.0, tmax[m] - tmin[m])
-            et0_daily = 0.0023 * _ra(lat, m) * (tmean + 17.8) * td ** 0.5
+            # NASA POWER uses -999 as a fill value for missing/invalid data.
+            # Clamping to 0 would make ET0 = 0 → simulator finds 0 irrigation events.
+            # Instead substitute Ra × 0.5 (Angström estimate) for any flagged month.
+            rs = srad[m] if srad[m] >= 0 else 0.5 * _ra(lat, m)
+            et0_daily = max(0.0, 0.0023 * rs * (tmean[m] + 17.8) * td_est ** 0.5)
             et0_mm.append(round(et0_daily * _DAYS[m], 1))
+
+        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        print(f"\n[NASA POWER] {lat:.2f}°N {lon:.2f}°E  td_est={td_est:.1f}°C")
+        print(f"  {'Mo':<4} {'Precip':>8} {'ET0':>8} {'Tmean':>7} {'Rs':>7}")
+        for m in range(12):
+            print(f"  {months[m]:<4} {precip_mm[m]:>8.1f} {et0_mm[m]:>8.1f} {tmean[m]:>7.1f} {srad[m]:>7.2f}")
 
         return precip_mm, et0_mm, "NASA POWER"
 
-    except Exception:
+    except Exception as e:
+        print(f"[NASA POWER] fetch failed ({e}), using Ra fallback for {lat:.2f}°N")
         region = determine_region(lat, lon)
-        return list(REGIONAL_PRECIP[region]), list(REGIONAL_ET0[region]), "Regional Defaults"
+        return list(REGIONAL_PRECIP[region]), _ra_et0(lat), "Ra Estimate (offline)"
 
 
 def determine_region(lat, lon):

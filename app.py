@@ -41,9 +41,6 @@ _lon = _lon_raw if _lon_raw is not None else DEFAULT_LON
 active_region = determine_region(_lat, _lon)
 suggested_crops = REGIONAL_CROP_DATABASE[active_region]
 
-if not st.session_state.get("selected_crop"):
-    st.session_state["selected_crop"] = suggested_crops[0]
-
 
 # ── Step indicator ────────────────────────────────────────────────────────────
 

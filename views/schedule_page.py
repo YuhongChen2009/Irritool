@@ -13,7 +13,9 @@ def render(active_region):
     lat = st.session_state.get("_coord_lat_saved") or 0.0
     lon = st.session_state.get("_coord_lon_saved") or 0.0
 
-    climate_key = (round(lat, 2), round(lon, 2))
+    # Version tag forces re-fetch when the ET0 calculation method changes.
+    _CACHE_VER = "v3-T2M"
+    climate_key = (round(lat, 2), round(lon, 2), _CACHE_VER)
     if st.session_state.get("climate_key") != climate_key:
         with st.spinner("Fetching climate data from NASA POWER..."):
             precip, et0, climate_source = fetch_climate(lat, lon)
@@ -48,10 +50,18 @@ def render(active_region):
                 f"output below uses your location's climatological norms."
             )
 
+        if result["bf_events_yr"] == 0:
+            st.info(
+                "**0 irrigation events calculated.** Rainfall during this crop's "
+                "growing season appears sufficient to meet water demand at this location. "
+                "Verify the climate charts below look realistic — if ET₀ appears near "
+                "zero, there may be a data issue with this coordinate."
+            )
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Optimal VWC Trigger",   f"{result['trigger']}%")
         c2.metric("Calculated Events / Yr", result["bf_events_yr"],
-                  delta=f"{result['trad_events_yr'] - result['bf_events_yr']} fewer",
+                  delta=result["bf_events_yr"] - result["trad_events_yr"],
                   delta_color="inverse")
         c3.metric("Frequency Reduction",   f"{result['reduction_pct']}%")
         c4.metric("Annual Water Saved",    f"{result['saved_L']:,} L/acre")
@@ -98,11 +108,12 @@ def render(active_region):
         # ── Climate data section ──────────────────────────────────────────────
         st.divider()
         if climate_source == "NASA POWER":
-            st.success(f"**Climate data: {climate_source}** · 20-year climatological normals (1984–2023) · "
+            st.success(f"**Climate data: {climate_source}** · 20-year climatological normals (2001–2020) · "
                        f"{lat:.2f}°N, {lon:.2f}°E")
         else:
             st.warning(f"**Climate data: {climate_source}** · NASA POWER unavailable — "
-                       f"using hardcoded regional averages. Results will be less accurate.")
+                       f"ET₀ estimated from extraterrestrial radiation at {lat:.2f}°N. "
+                       f"Precipitation uses regional defaults. Results will be less accurate.")
 
         chart_data = {
             "Month":             _MONTHS,
