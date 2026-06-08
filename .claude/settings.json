@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python -c \"from views.map_page import render; print\\('import OK'\\)\")",
-      "Bash(python -c ' *)",
-      "Bash(pip show *)"
-    ]
-  }
-}
