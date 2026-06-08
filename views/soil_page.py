@@ -78,8 +78,9 @@ def render(active_region):
         st.session_state["soil_pwp"]  = pwp
 
         awc = round(fc - pwp, 1)
-        if awc <= 0:
-            st.error("Field Capacity must be greater than Wilting Point.")
+        if awc <= 3.0:
+            st.error("Field Capacity must exceed Wilting Point by more than 3%. "
+                     "Increase FC or decrease PWP.")
         else:
             st.info(f"Available Water Capacity: **{awc}%** ({awc * 10:.0f} mm/m root zone)")
 
@@ -94,8 +95,8 @@ def render(active_region):
         st.session_state["page"] = 1
         st.rerun()
     if col_next.button("Next →", type="primary", width='stretch'):
-        if awc <= 0:
-            st.toast("Fix soil parameters before continuing.", icon="⚠️")
+        if awc <= 3.0:
+            st.toast("FC must exceed PWP by more than 3% before continuing.", icon="⚠️")
         else:
             st.session_state["page"] = 3
             st.rerun()

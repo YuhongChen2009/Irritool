@@ -32,7 +32,7 @@ DEFAULT_LON = -80.2500
 
 _MONTH_KEYS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 _DAYS       = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-_DOY        = [15, 45, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
+_DOY        = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
 
 
 def _ra(lat_deg, month_idx):
@@ -322,17 +322,27 @@ def fetch_climate(lat, lon):
         resp.raise_for_status()
         param = resp.json()["properties"]["parameter"]
 
-        prec_d = [param["PRECTOTCORR"][k]       for k in _MONTH_KEYS]
-        tmean  = [param["T2M"][k]               for k in _MONTH_KEYS]  # monthly mean °C
-        srad   = [param["ALLSKY_SFC_SW_DWN"][k] for k in _MONTH_KEYS]  # MJ/m²/day
+        # NASA POWER uses -999 as a fill value for missing/invalid data.
+        # Guard all three parameters so a flagged month doesn't silently corrupt results:
+        #   PRECTOTCORR: clamp to 0 (negative rain is physically impossible)
+        #   T2M:         substitute latitude-based temperature estimate
+        #   ALLSKY_SFC_SW_DWN: substitute Ra × 0.5 (Angström estimate)
+        _ann_mean  = max(-10.0, 30.0 - 0.55 * abs(lat))
+        _amplitude = abs(lat) * 0.38
+        _peak_m    = 6 if lat >= 0 else 0
+
+        raw_prec  = [param["PRECTOTCORR"][k]       for k in _MONTH_KEYS]
+        raw_tmean = [param["T2M"][k]               for k in _MONTH_KEYS]
+        srad      = [param["ALLSKY_SFC_SW_DWN"][k] for k in _MONTH_KEYS]
+
+        prec_d = [max(0.0, v) for v in raw_prec]
+        tmean  = [v if v > -100 else _ann_mean + _amplitude * math.cos(2 * math.pi * (m - _peak_m) / 12)
+                  for m, v in enumerate(raw_tmean)]
 
         precip_mm = [round(prec_d[m] * _DAYS[m], 1) for m in range(12)]
         et0_mm = []
         for m in range(12):
-            # NASA POWER uses -999 as a fill value for missing/invalid data.
-            # Clamping to 0 would make ET0 = 0 → simulator finds 0 irrigation events.
-            # Instead substitute Ra × 0.5 (Angström estimate) for any flagged month.
-            rs = srad[m] if srad[m] >= 0 else 0.5 * _ra(lat, m)
+            rs        = srad[m] if srad[m] >= 0 else 0.5 * _ra(lat, m)
             et0_daily = max(0.0, 0.0023 * rs * (tmean[m] + 17.8) * td_est ** 0.5)
             et0_mm.append(round(et0_daily * _DAYS[m], 1))
 

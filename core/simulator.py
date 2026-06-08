@@ -54,7 +54,7 @@ def _compute_phases(p, precip, et0, trigger, season_start):
         saved_pct = round((1 - bf_mm / trad_mm) * 100, 1) if trad_mm > 0 else 100.0
         phases.append({
             "Phase":            ph_name,
-            "Avg. Precip (mm)": int(ph_precip),
+            "Phase Precip (mm)": int(ph_precip),
             "Traditional (mm)": int(trad_mm),
             "ByteForce (mm)":   bf_mm,
             "Water Saved (%)":  f"{saved_pct}%",
@@ -73,9 +73,6 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
         orig_pwp = p["pwp"]
         if soil_fc  is not None: p["fc"]  = soil_fc
         if soil_pwp is not None: p["pwp"] = soil_pwp
-        # Scale stress_buffer to maintain its proportional position between pwp and fc.
-        # Without this, the original buffer can sit below the new pwp or conflict with
-        # the trigger search range, forcing the optimizer toward more irrigation events.
         if orig_fc > orig_pwp:
             ratio = (p["stress_buffer"] - orig_pwp) / (orig_fc - orig_pwp)
             p["stress_buffer"] = round(
@@ -89,6 +86,10 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
         ev, sx = _simulate(p, precip, et0, t, season_start)
         if sx < best_stress or (sx == best_stress and ev < best_events):
             best_trigger, best_events, best_stress = float(t), ev, sx
+
+    # np.arange is empty when fc - pwp <= 3.0; no valid trigger exists.
+    if best_trigger is None:
+        return None
 
     print(f"[Sim] {crop_name} | trigger={best_trigger} events={best_events} stress={best_stress} "
           f"fc={p['fc']} pwp={p['pwp']} buf={p['stress_buffer']}")

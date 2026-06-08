@@ -15,9 +15,6 @@ _TILE_URLS = {
 
 
 def render(active_region, suggested_crops):
-    # coord_lat/lon are widget-keyed and get cleared when the map page unmounts.
-    # _coord_*_saved are plain user state that survive page navigation.
-    # Both default to None — no location is selected until the user clicks or types.
     if st.session_state.get("coord_lat") is None:
         st.session_state["coord_lat"] = st.session_state.get("_coord_lat_saved")
     if st.session_state.get("coord_lon") is None:
@@ -39,7 +36,6 @@ def render(active_region, suggested_crops):
         if st.session_state["selected_crop"] not in suggested_crops:
             st.session_state["selected_crop"] = suggested_crops[0]
 
-    # Visual center for the map when no location is selected yet
     map_lat = coord_lat if has_location else 25.0
     map_lon = coord_lon if has_location else 0.0
 
@@ -59,8 +55,8 @@ def render(active_region, suggested_crops):
             key="leaflet_map",
         )
 
-    # Timestamp guard: only process genuinely new clicks, not stale values from old reruns
-    if result and result.get("ts", 0) > st.session_state["last_click_ts"]:
+    if (result and result.get("ts", 0) > st.session_state["last_click_ts"]
+            and "lat" in result and "lon" in result):
         st.session_state["last_click_ts"] = result["ts"]
         new_lat = round(float(result["lat"]), 4)
         new_lon = round(float(result["lon"]), 4)

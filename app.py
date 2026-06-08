@@ -61,8 +61,10 @@ def _render_steps(current, max_reached):
             )
         elif i <= max_reached:
             if col.button(label, key=f"tab_{i}", width='stretch'):
-                st.session_state["_coord_lat_saved"]     = st.session_state.get("coord_lat") or st.session_state.get("_coord_lat_saved")
-                st.session_state["_coord_lon_saved"]     = st.session_state.get("coord_lon") or st.session_state.get("_coord_lon_saved")
+                _cl = st.session_state.get("coord_lat")
+                st.session_state["_coord_lat_saved"] = _cl if _cl is not None else st.session_state.get("_coord_lat_saved")
+                _cn = st.session_state.get("coord_lon")
+                st.session_state["_coord_lon_saved"] = _cn if _cn is not None else st.session_state.get("_coord_lon_saved")
                 st.session_state["_selected_crop_saved"] = st.session_state.get("selected_crop") or st.session_state.get("_selected_crop_saved")
                 st.session_state["_planting_date_saved"] = st.session_state.get("planting_date") or st.session_state.get("_planting_date_saved")
                 st.session_state["_soil_type_saved"]     = st.session_state.get("soil_type") or st.session_state.get("_soil_type_saved")
