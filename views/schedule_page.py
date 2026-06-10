@@ -52,10 +52,12 @@ def render(active_region):
 
         if result["bf_events_yr"] == 0:
             st.info(
-                "**0 irrigation events calculated.** Rainfall during this crop's "
+                "**0 irrigation events calculated.** Monthly average rainfall during this crop's "
                 "growing season appears sufficient to meet water demand at this location. "
-                "Verify the climate charts below look realistic — if ET₀ appears near "
-                "zero, there may be a data issue with this coordinate."
+                "Note: this model uses monthly climate averages and cannot capture within-month "
+                "dry spells — actual field irrigation may still be needed. "
+                "If this is a dry-season crop, try changing the planting month. "
+                "If ET₀ in the charts below appears near zero, there may be a data issue with this coordinate."
             )
 
         c1, c2, c3, c4 = st.columns(4)
@@ -109,11 +111,12 @@ def render(active_region):
         st.divider()
         if climate_source == "NASA POWER":
             st.success(f"**Climate data: {climate_source}** · 20-year climatological normals (2001–2020) · "
-                       f"{lat:.2f}°N, {lon:.2f}°E")
+                       f"{lat:.2f}°N, {lon:.2f}°E · FAO effective rainfall applied in simulation")
         else:
             st.warning(f"**Climate data: {climate_source}** · NASA POWER unavailable — "
                        f"ET₀ estimated from extraterrestrial radiation at {lat:.2f}°N. "
-                       f"Precipitation uses regional defaults. Results will be less accurate.")
+                       f"Precipitation uses regional defaults. Results will be less accurate. "
+                       f"FAO effective rainfall applied in simulation.")
 
         chart_data = {
             "Month":             _MONTHS,

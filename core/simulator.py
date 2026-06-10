@@ -6,6 +6,17 @@ TRAD_EVENTS_YR = 28
 TRAD_DOSE_MM = 25
 
 
+def _effective_precip(precip):
+    """FAO/USDA SCS effective rainfall: reduces monthly totals for runoff and deep percolation.
+    Pe = 0.6P - 10  (P ≤ 70 mm);  Pe = 0.8P - 24  (P > 70 mm), floored at 0.
+    """
+    result = []
+    for p in precip:
+        pe = 0.6 * p - 10.0 if p <= 70.0 else 0.8 * p - 24.0
+        result.append(max(0.0, pe))
+    return result
+
+
 def _simulate(p, precip, et0, trigger, season_start):
     dose_vwc = p["dose_mm"] / p["root_mm"] * 100
     vwc = p["fc"]
@@ -25,7 +36,11 @@ def _simulate(p, precip, et0, trigger, season_start):
     return events, stress
 
 
-def _compute_phases(p, precip, et0, trigger, season_start):
+def _compute_phases(p, precip, et0, trigger, season_start, raw_precip=None):
+    # precip: effective rainfall used in water balance
+    # raw_precip: actual monthly totals shown in the phase table
+    if raw_precip is None:
+        raw_precip = precip
     n = len(p["kc"])
     third = n // 3
     dose_vwc = p["dose_mm"] / p["root_mm"] * 100
@@ -42,7 +57,7 @@ def _compute_phases(p, precip, et0, trigger, season_start):
             m = (season_start - 1 + i) % 12
             etc_vwc = et0[m] * p["kc"][i] / p["root_mm"] * 100
             prec_vwc = precip[m] / p["root_mm"] * 100
-            ph_precip += precip[m]
+            ph_precip += raw_precip[m]
             vwc = vwc + prec_vwc - etc_vwc
             while vwc < trigger:
                 vwc += dose_vwc
@@ -80,10 +95,11 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
                     p["pwp"] + ratio * (p["fc"] - p["pwp"]))), 1)
 
     season_start = planting_date.month
+    eff_precip = _effective_precip(precip)
 
     best_trigger, best_events, best_stress = None, 9999, 9999
     for t in np.arange(p["pwp"] + 2.0, p["fc"] - 1.0, 0.5):
-        ev, sx = _simulate(p, precip, et0, t, season_start)
+        ev, sx = _simulate(p, eff_precip, et0, t, season_start)
         if sx < best_stress or (sx == best_stress and ev < best_events):
             best_trigger, best_events, best_stress = float(t), ev, sx
 
@@ -107,7 +123,7 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
         bf_water_L=int(bf_water),
         trad_water_L=int(trad_water),
         saved_L=int(saved),
-        phases=_compute_phases(p, precip, et0, best_trigger, season_start),
+        phases=_compute_phases(p, eff_precip, et0, best_trigger, season_start, raw_precip=precip),
         kc=p["kc"],
         fc=p["fc"], pwp=p["pwp"],
         stress_buffer=p["stress_buffer"],
