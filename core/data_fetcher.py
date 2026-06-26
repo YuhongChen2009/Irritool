@@ -174,12 +174,20 @@ def _jwt_expiry(token: str) -> float:
 
 def _faostat_login() -> str:
     try:
-        import tomllib
+        import os, tomllib
+        username, password = "", ""
         secrets_path = Path(__file__).parent.parent / ".streamlit" / "secrets.toml"
-        with open(secrets_path, "rb") as f:
-            s = tomllib.load(f)
-        username = s.get("FAOSTAT_USERNAME", "")
-        password = s.get("FAOSTAT_PASSWORD", "")
+        try:
+            with open(secrets_path, "rb") as f:
+                s = tomllib.load(f)
+            username = s.get("FAOSTAT_USERNAME", "")
+            password = s.get("FAOSTAT_PASSWORD", "")
+        except FileNotFoundError:
+            pass
+        if not username:
+            username = os.environ.get("FAOSTAT_USERNAME", "")
+        if not password:
+            password = os.environ.get("FAOSTAT_PASSWORD", "")
         if not username or not password:
             return ""
         resp = requests.post(
