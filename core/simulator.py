@@ -2,8 +2,6 @@ import numpy as np
 from .data_fetcher import CROP_PARAMS
 
 L_PER_MM_PER_ACRE = 4047.0
-TRAD_EVENTS_YR = 28
-TRAD_DOSE_MM = 25
 
 
 def _effective_precip(precip):
@@ -36,7 +34,7 @@ def _simulate(p, precip, et0, trigger, season_start):
     return events, stress
 
 
-def _compute_phases(p, precip, et0, trigger, season_start, raw_precip=None):
+def _compute_phases(p, precip, et0, trigger, season_start, trad_events, raw_precip=None):
     # precip: effective rainfall used in water balance
     # raw_precip: actual monthly totals shown in the phase table
     if raw_precip is None:
@@ -65,14 +63,14 @@ def _compute_phases(p, precip, et0, trigger, season_start, raw_precip=None):
             vwc = min(vwc, p["fc"])
 
         bf_mm = ph_events * p["dose_mm"]
-        trad_mm = len(list(ph_range)) / n * TRAD_EVENTS_YR * TRAD_DOSE_MM
+        trad_mm = len(list(ph_range)) / n * trad_events * p["dose_mm"]
         saved_pct = round((1 - bf_mm / trad_mm) * 100, 1) if trad_mm > 0 else 100.0
         phases.append({
-            "Phase":            ph_name,
+            "Phase":             ph_name,
             "Phase Precip (mm)": int(ph_precip),
-            "Traditional (mm)": int(trad_mm),
-            "ByteForce (mm)":   bf_mm,
-            "Water Saved (%)":  f"{saved_pct}%",
+            "Traditional (mm)":  int(trad_mm),
+            "ByteForce (mm)":    bf_mm,
+            "Water Saved (%)":   f"{saved_pct}%",
         })
 
     return phases
@@ -97,6 +95,11 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
     season_start = planting_date.month
     eff_precip = _effective_precip(precip)
 
+    # Traditional baseline: total seasonal crop water demand / dose, assuming no rain credit.
+    # This represents a fixed-calendar farmer who irrigates to fully replace ETc.
+    seasonal_etc = sum(et0[(season_start - 1 + i) % 12] * p["kc"][i] for i in range(len(p["kc"])))
+    trad_events = max(1, round(seasonal_etc / p["dose_mm"]))
+
     best_trigger, best_events, best_stress = None, 9999, 9999
     for t in np.arange(p["pwp"] + 2.0, p["fc"] - 1.0, 0.5):
         ev, sx = _simulate(p, eff_precip, et0, t, season_start)
@@ -108,22 +111,22 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
         return None
 
     print(f"[Sim] {crop_name} | trigger={best_trigger} events={best_events} stress={best_stress} "
-          f"fc={p['fc']} pwp={p['pwp']} buf={p['stress_buffer']}")
+          f"fc={p['fc']} pwp={p['pwp']} buf={p['stress_buffer']} trad={trad_events}")
 
-    trad_water = TRAD_EVENTS_YR * TRAD_DOSE_MM * L_PER_MM_PER_ACRE
+    trad_water = trad_events * p["dose_mm"] * L_PER_MM_PER_ACRE
     bf_water   = best_events * p["dose_mm"] * L_PER_MM_PER_ACRE
-    saved      = int(trad_water - bf_water)   # negative = more water needed than baseline
-    reduction  = round((1 - best_events / TRAD_EVENTS_YR) * 100, 1)  # negative = more events
+    saved      = int(trad_water - bf_water)
+    reduction  = round((1 - best_events / trad_events) * 100, 1)
 
     return dict(
         trigger=round(best_trigger, 1),
         bf_events_yr=best_events,
-        trad_events_yr=TRAD_EVENTS_YR,
+        trad_events_yr=trad_events,
         reduction_pct=reduction,
         bf_water_L=int(bf_water),
         trad_water_L=int(trad_water),
         saved_L=int(saved),
-        phases=_compute_phases(p, eff_precip, et0, best_trigger, season_start, raw_precip=precip),
+        phases=_compute_phases(p, eff_precip, et0, best_trigger, season_start, trad_events, raw_precip=precip),
         kc=p["kc"],
         fc=p["fc"], pwp=p["pwp"],
         stress_buffer=p["stress_buffer"],

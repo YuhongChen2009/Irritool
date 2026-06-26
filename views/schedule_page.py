@@ -62,10 +62,13 @@ def render(active_region):
 
         above_baseline = result["bf_events_yr"] > result["trad_events_yr"]
         if above_baseline:
+            awc = round(result["fc"] - result["pwp"], 1)
             st.warning(
                 f"**More events than the traditional baseline ({result['trad_events_yr']}).** "
-                f"This crop at this location requires more frequent irrigation than the fixed-calendar schedule. "
-                f"Consider a more drought-tolerant crop or a higher-capacity soil."
+                f"The selected soil has an AWC of only {awc}% ({awc * result['root_mm'] / 100:.0f} mm in a "
+                f"{result['root_mm']} mm root zone) — too small to buffer this crop's water demand between "
+                f"irrigations at this location. Go back and select a soil with higher AWC (e.g. Loam or Silt Loam), "
+                f"or verify that the soil type matches the actual field conditions."
             )
 
         c1, c2, c3, c4 = st.columns(4)
@@ -85,7 +88,7 @@ def render(active_region):
 
         with col_a:
             st.markdown("#### Phase-Specific Water Allocation")
-            st.caption("Irrigation depth (mm) vs. OMAFRA fixed-calendar baseline.")
+            st.caption(f"Irrigation depth (mm) vs. traditional baseline ({result['trad_events_yr']} events/season, no rain credit).")
             st.dataframe(result["phases"], width='stretch', hide_index=True)
 
             if above_baseline:
