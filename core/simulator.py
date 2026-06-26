@@ -112,8 +112,8 @@ def run_calc(crop_name, precip, et0, planting_date, soil_fc=None, soil_pwp=None)
 
     trad_water = TRAD_EVENTS_YR * TRAD_DOSE_MM * L_PER_MM_PER_ACRE
     bf_water   = best_events * p["dose_mm"] * L_PER_MM_PER_ACRE
-    saved      = max(0, trad_water - bf_water)
-    reduction  = round(max(0.0, (1 - best_events / TRAD_EVENTS_YR) * 100), 1)
+    saved      = int(trad_water - bf_water)   # negative = more water needed than baseline
+    reduction  = round((1 - best_events / TRAD_EVENTS_YR) * 100, 1)  # negative = more events
 
     return dict(
         trigger=round(best_trigger, 1),

@@ -60,13 +60,25 @@ def render(active_region):
                 "If ET₀ in the charts below appears near zero, there may be a data issue with this coordinate."
             )
 
+        above_baseline = result["bf_events_yr"] > result["trad_events_yr"]
+        if above_baseline:
+            st.warning(
+                f"**More events than the traditional baseline ({result['trad_events_yr']}).** "
+                f"This crop at this location requires more frequent irrigation than the fixed-calendar schedule. "
+                f"Consider a more drought-tolerant crop or a higher-capacity soil."
+            )
+
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Optimal VWC Trigger",   f"{result['trigger']}%")
+        c1.metric("Optimal VWC Trigger", f"{result['trigger']}%")
         c2.metric("Calculated Events / Yr", result["bf_events_yr"],
                   delta=result["bf_events_yr"] - result["trad_events_yr"],
                   delta_color="inverse")
-        c3.metric("Frequency Reduction",   f"{result['reduction_pct']}%")
-        c4.metric("Annual Water Saved",    f"{result['saved_L']:,} L/acre")
+        if above_baseline:
+            c3.metric("Frequency Increase", f"{abs(result['reduction_pct'])}%")
+            c4.metric("Extra Water Needed", f"{abs(result['saved_L']):,} L/acre")
+        else:
+            c3.metric("Frequency Reduction", f"{result['reduction_pct']}%")
+            c4.metric("Annual Water Saved",  f"{result['saved_L']:,} L/acre")
 
         st.divider()
         col_a, col_b = st.columns(2)
@@ -76,14 +88,21 @@ def render(active_region):
             st.caption("Irrigation depth (mm) vs. OMAFRA fixed-calendar baseline.")
             st.dataframe(result["phases"], width='stretch', hide_index=True)
 
+            if above_baseline:
+                events_note = f"{abs(result['reduction_pct'])}% more"
+                water_note  = f"{abs(result['saved_L']):,} L extra"
+            else:
+                events_note = f"{result['reduction_pct']}% fewer"
+                water_note  = f"{result['saved_L']:,} L saved"
+
             st.markdown("#### Calculated vs. Traditional Baseline")
             st.dataframe([
                 {"Metric": "Events / Year",         "Traditional": str(result["trad_events_yr"]),
                  "Irritool": str(result["bf_events_yr"]),
-                 "Improvement": f"{result['reduction_pct']}% fewer"},
+                 "Improvement": events_note},
                 {"Metric": "Water / Year (L/acre)", "Traditional": f"{result['trad_water_L']:,}",
                  "Irritool": f"{result['bf_water_L']:,}",
-                 "Improvement": f"{result['saved_L']:,} L saved"},
+                 "Improvement": water_note},
             ], width='stretch', hide_index=True)
 
         with col_b:
