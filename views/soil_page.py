@@ -35,49 +35,81 @@ _CHOICES = list(SOIL_PRESETS.keys())
 
 
 def render(active_region):
-    # Read stable session state values (never cleared since no key= is used)
-    current_type = st.session_state.get("soil_type") or "Loam"
-    current_fc   = st.session_state.get("soil_fc")   or 31.0
-    current_pwp  = st.session_state.get("soil_pwp")  or 14.0
+    # Ensure canonical session state values exist
+    canonical_type = st.session_state.get("soil_type") or "Loam"
+    if canonical_type not in _CHOICES:
+        canonical_type = "Loam"
+    canonical_fc  = st.session_state.get("soil_fc", 31.0)
+    canonical_pwp = st.session_state.get("soil_pwp", 14.0)
 
-    if current_type not in _CHOICES:
-        current_type = "Loam"
+    # Initialize widget session state keys if not present
+    if "soil_type_select" not in st.session_state:
+        st.session_state["soil_type_select"] = canonical_type
+    if "soil_fc_input" not in st.session_state:
+        st.session_state["soil_fc_input"] = float(canonical_fc)
+    if "soil_pwp_input" not in st.session_state:
+        st.session_state["soil_pwp_input"] = float(canonical_pwp)
+
+    def _on_type_change():
+        selected = st.session_state["soil_type_select"]
+        st.session_state["soil_type"] = selected
+        if selected != "Custom" and selected in SOIL_PRESETS:
+            preset = SOIL_PRESETS[selected]
+            st.session_state["soil_fc_input"] = float(preset["fc"])
+            st.session_state["soil_pwp_input"] = float(preset["pwp"])
+            st.session_state["soil_fc"] = float(preset["fc"])
+            st.session_state["soil_pwp"] = float(preset["pwp"])
+
+    def _on_fc_change():
+        val = float(st.session_state["soil_fc_input"])
+        st.session_state["soil_fc"] = val
+        curr_type = st.session_state.get("soil_type_select")
+        if curr_type != "Custom" and curr_type in SOIL_PRESETS:
+            preset = SOIL_PRESETS[curr_type]
+            if val != preset["fc"] or float(st.session_state.get("soil_pwp_input", 0)) != preset["pwp"]:
+                st.session_state["soil_type_select"] = "Custom"
+                st.session_state["soil_type"] = "Custom"
+
+    def _on_pwp_change():
+        val = float(st.session_state["soil_pwp_input"])
+        st.session_state["soil_pwp"] = val
+        curr_type = st.session_state.get("soil_type_select")
+        if curr_type != "Custom" and curr_type in SOIL_PRESETS:
+            preset = SOIL_PRESETS[curr_type]
+            if val != preset["pwp"] or float(st.session_state.get("soil_fc_input", 0)) != preset["fc"]:
+                st.session_state["soil_type_select"] = "Custom"
+                st.session_state["soil_type"] = "Custom"
 
     _, col_c, _ = st.columns([1, 2, 1])
     with col_c:
         st.markdown("### Choose Soil Type")
 
-        selected_type = st.selectbox(
+        st.selectbox(
             "Soil texture class",
             options=_CHOICES,
-            index=_CHOICES.index(current_type),
+            key="soil_type_select",
+            on_change=_on_type_change,
         )
 
-        # Apply preset when the type changes; preserve custom values otherwise
-        if selected_type != current_type and selected_type != "Custom":
-            preset = SOIL_PRESETS[selected_type]
-            current_fc  = preset["fc"]
-            current_pwp = preset["pwp"]
-
-        fc = st.number_input(
+        st.number_input(
             "Field Capacity — FC (%)",
             min_value=1.0, max_value=70.0, step=0.5, format="%.1f",
-            value=current_fc,
+            key="soil_fc_input",
+            on_change=_on_fc_change,
             help="Volumetric water content after gravity drainage (24–48 h).",
         )
-        pwp = st.number_input(
+        st.number_input(
             "Permanent Wilting Point — PWP (%)",
             min_value=1.0, max_value=50.0, step=0.5, format="%.1f",
-            value=current_pwp,
+            key="soil_pwp_input",
+            on_change=_on_pwp_change,
             help="Minimum VWC at which plants can extract water.",
         )
 
-        # Write back immediately — no key= so values persist across navigation
-        st.session_state["soil_type"] = selected_type
-        st.session_state["soil_fc"]   = fc
-        st.session_state["soil_pwp"]  = pwp
-
+        fc = st.session_state["soil_fc_input"]
+        pwp = st.session_state["soil_pwp_input"]
         awc = round(fc - pwp, 1)
+
         if awc <= 3.0:
             st.error("Field Capacity must exceed Wilting Point by more than 3%. "
                      "Increase FC or decrease PWP.")
