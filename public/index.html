@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IrriTool | Regional Precision Irrigation</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js",
+        "firebase/analytics": "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <h1>IrriTool</h1>
+      <p class="subtitle">Localized Dynamic Precision Irrigation Scheduler</p>
+    </header>
+
+    <!-- 4-Step Indicator -->
+    <nav id="step-indicator" class="step-indicator" aria-label="Progress steps"></nav>
+    <hr class="divider" />
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+    <!-- Step 0: Select Location -->
+    <section id="page-0" class="page-section">
+      <div class="map-layout">
+        <div class="map-column">
+          <div id="map" class="leaflet-map-box"></div>
+        </div>
+        <div class="panel-column">
+          <h3>Selected Location</h3>
+
+          <div id="location-coords-group" class="hidden">
+            <div class="form-group">
+              <label for="input-lat">Latitude</label>
+              <input type="number" id="input-lat" min="-90" max="90" step="0.0001" />
+            </div>
+            <div class="form-group">
+              <label for="input-lon">Longitude</label>
+              <input type="number" id="input-lon" min="-180" max="180" step="0.0001" />
+            </div>
+          </div>
+
+          <div id="location-status-box" class="alert alert-info">
+            📍 Click on the map to select a location.
+          </div>
+
+          <div class="form-group">
+            <label for="select-map-tile">Map labels</label>
+            <select id="select-map-tile">
+              <option value="Default (local languages)">Default (local languages)</option>
+              <option value="English">English</option>
+            </select>
+          </div>
+
+          <hr class="divider" />
+          <button id="btn-map-next" class="btn btn-primary btn-block">Next →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 1: Choose Crop -->
+    <section id="page-1" class="page-section hidden">
+      <div id="crop-loading" class="loading-box hidden">
+        <div class="spinner"></div>
+        <span>Fetching crop data from FAOSTAT...</span>
+      </div>
+
+      <div id="crop-content" class="centered-column">
+        <h3>Your Selected Location</h3>
+        <div class="metrics-grid-2x2">
+          <div class="metric-card">
+            <div class="metric-label">Country</div>
+            <div id="metric-country" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Coordinates</div>
+            <div id="metric-coords" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Data Source</div>
+            <div id="metric-source" class="metric-value">FAOSTAT</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Data Year</div>
+            <div id="metric-year" class="metric-value">—</div>
+          </div>
+        </div>
+
+        <hr class="divider" />
+        <h3>Configure Your Crop</h3>
+
+        <div class="form-group">
+          <label for="select-crop">💡 Top Crops for This Country:</label>
+          <select id="select-crop"></select>
+          <small class="caption">Ranked by annual production volume (tonnes) · Source: FAOSTAT QCL</small>
+        </div>
+
+        <div class="form-group">
+          <label for="input-planting-date">Expected Planting Date</label>
+          <input type="date" id="input-planting-date" value="2026-05-01" />
+        </div>
+      </div>
+
+      <hr class="divider" />
+      <div class="nav-footer">
+        <button id="btn-crop-back" class="btn btn-secondary">← Back</button>
+        <div class="nav-spacer"></div>
+        <button id="btn-crop-next" class="btn btn-primary">Next →</button>
+      </div>
+    </section>
+
+    <!-- Step 2: Choose Soil -->
+    <section id="page-2" class="page-section hidden">
+      <div class="centered-column">
+        <h3>Choose Soil Type</h3>
+
+        <div class="form-group">
+          <label for="select-soil-type">Soil texture class</label>
+          <select id="select-soil-type"></select>
+        </div>
+
+        <div class="form-group">
+          <label for="input-soil-fc">
+            Field Capacity — FC (%)
+            <span class="help-icon" title="Volumetric water content after gravity drainage (24–48 h).">?</span>
+          </label>
+          <input type="number" id="input-soil-fc" min="1.0" max="70.0" step="0.5" value="31.0" />
+        </div>
+
+        <div class="form-group">
+          <label for="input-soil-pwp">
+            Permanent Wilting Point — PWP (%)
+            <span class="help-icon" title="Minimum VWC at which plants can extract water.">?</span>
+          </label>
+          <input type="number" id="input-soil-pwp" min="1.0" max="50.0" step="0.5" value="14.0" />
+        </div>
+
+        <div id="soil-awc-alert" class="alert alert-info"></div>
+      </div>
+
+      <hr class="divider" />
+      <h4>Reference: Common Soil Types</h4>
+      <p class="caption">Source: FAO Irrigation &amp; Drainage Paper 56 · USDA NRCS texture classes</p>
+      <div class="table-wrapper">
+        <table id="table-soil-reference" class="data-table">
+          <thead>
+            <tr>
+              <th>Soil Type</th>
+              <th>Field Capacity (%)</th>
+              <th>Wilting Point (%)</th>
+              <th>AWC (mm/m)</th>
+              <th>Common Regions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+      <div class="nav-footer">
+        <button id="btn-soil-back" class="btn btn-secondary">← Back</button>
+        <div class="nav-spacer"></div>
+        <button id="btn-soil-next" class="btn btn-primary">Next →</button>
+      </div>
+    </section>
+
+    <!-- Step 3: Irrigation Schedule -->
+    <section id="page-3" class="page-section hidden">
+      <div id="schedule-loading" class="loading-box hidden">
+        <div class="spinner"></div>
+        <span id="schedule-loading-text">Fetching climate data from NASA POWER...</span>
+      </div>
+
+      <div id="schedule-error" class="alert alert-error hidden">
+        No parameters found for this crop.
+      </div>
+
+      <div id="schedule-content">
+        <h2 id="schedule-title">Calculated Results</h2>
+        <p id="schedule-subtitle" class="caption"></p>
+
+        <div id="alert-paper-validated" class="alert alert-success hidden"></div>
+        <div id="alert-zero-events" class="alert alert-info hidden">
+          <strong>0 irrigation events calculated.</strong> Monthly average rainfall during this crop's
+          growing season appears sufficient to meet water demand at this location.
+          Note: this model uses monthly climate averages and cannot capture within-month
+          dry spells — actual field irrigation may still be needed.
+          If this is a dry-season crop, try changing the planting month.
+          If ET₀ in the charts below appears near zero, there may be a data issue with this coordinate.
+        </div>
+        <div id="alert-above-baseline" class="alert alert-warning hidden"></div>
+
+        <!-- 4 Top-Level Metrics -->
+        <div class="metrics-grid-4">
+          <div class="metric-card">
+            <div class="metric-label">Optimal VWC Trigger</div>
+            <div id="res-trigger" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Calculated Events / Yr</div>
+            <div id="res-events" class="metric-value">—</div>
+            <div id="res-events-delta" class="metric-delta"></div>
+          </div>
+          <div class="metric-card">
+            <div id="res-freq-label" class="metric-label">Frequency Reduction</div>
+            <div id="res-freq-val" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div id="res-water-label" class="metric-label">Annual Water Saved</div>
+            <div id="res-water-val" class="metric-value">—</div>
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Two-Column Tables -->
+        <div class="two-col-grid">
+          <div class="col-pane">
+            <h4>Phase-Specific Water Allocation</h4>
+            <p id="phase-caption" class="caption"></p>
+            <div class="table-wrapper">
+              <table id="table-phases" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Phase</th>
+                    <th>Phase Precip (mm)</th>
+                    <th>Traditional (mm)</th>
+                    <th>ByteForce (mm)</th>
+                    <th>Water Saved (%)</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <h4 class="mt-lg">Calculated vs. Traditional Baseline</h4>
+            <div class="table-wrapper">
+              <table id="table-baseline" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Traditional</th>
+                    <th>Irritool</th>
+                    <th>Improvement</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="col-pane">
+            <h4>Crop Coefficients (Kc) — FAO-56</h4>
+            <div class="table-wrapper">
+              <table id="table-kc" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Kc</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <h4 class="mt-lg">Soil-Water Parameters</h4>
+            <div class="table-wrapper">
+              <table id="table-soil-params" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Parameter</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Climate Data Section -->
+        <hr class="divider" />
+        <div id="alert-climate-source" class="alert"></div>
+
+        <div class="two-col-grid">
+          <div class="col-pane">
+            <h4>Monthly Precipitation</h4>
+            <div id="chart-precip" class="chart-container"></div>
+          </div>
+          <div class="col-pane">
+            <h4>Monthly Reference ET₀</h4>
+            <div id="chart-et0" class="chart-container"></div>
+          </div>
+        </div>
+
+        <details class="expander">
+          <summary>Monthly climate data table</summary>
+          <div class="expander-body">
+            <div class="table-wrapper">
+              <table id="table-climate" class="data-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Precipitation (mm)</th>
+                    <th>ET₀ (mm)</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <hr class="divider" />
+      <div class="nav-footer">
+        <button id="btn-schedule-back" class="btn btn-secondary">← Back</button>
+        <div class="nav-spacer"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
